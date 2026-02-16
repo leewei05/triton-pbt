@@ -1,0 +1,22 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+
+# Triton cache (Crucial!)
+.triton/
+triton_cache/
+
+# Hypothesis
+.hypothesis/
+
+# Large data/logs
+*.log
+*.pt
+*.pth
+*.out
+
+# OS specific
+.DS_Store
+
+# NFS
+.nfs*

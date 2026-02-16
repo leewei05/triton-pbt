@@ -1,0 +1,13 @@
+#!/bin/bash
+
+#SBATCH --job-name="tunnel"
+#SBATCH --time=4:00:00 # walltime
+#SBATCH --gres=gpu:a40:1
+#SBATCH --partition=notchpeak-gpu-guest
+#SBATCH --account=owner-gpu-guest
+
+# Set job comment to BatchHost
+scontrol update JobId="$SLURM_JOB_ID" Comment="`hostname -s`"
+
+# Sleep.  This holds the job in running state, the user has to scancel their job if they are done early.
+sleep 4h
