@@ -1,3 +1,4 @@
+import torch
 import triton
 import triton.language as tl
 from hypothesis import given, strategies as st, settings
@@ -14,4 +15,6 @@ dtypes = integral_dtypes + float_dtypes
 dtypes_with_bfloat16 = dtypes + ['bfloat16']
 
 if __name__ == "__main__":
+    print(f"GPU: {torch.cuda.get_device_name(0)}")
+    print(f"Triton version: {triton.__version__}")
     print("Starting Hypothesis tests...")
