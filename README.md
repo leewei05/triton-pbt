@@ -7,8 +7,10 @@ sbatch ./scripts/tunnel.slr
 # login to the allocated node
 # activate conda env
 source ./scripts/setup.sh
-python tests/test_maximum.py
 
-🚀 Starting Hypothesis tests for tl.maximum...
-✅ All randomized tests passed!
+# run test
+pytest tests
+
+# print hypothesis test cases on a single test file
+pytest tests/test_core.py --hypothesis-verbosity=verbose -s
 ```
