@@ -1,6 +1,11 @@
 ## Quickstart
 
-```
+```sh
+# allocate GPU
+sbatch ./scripts/tunnel.slr
+
+# login to the allocated node
+# activate conda env
 source ./scripts/setup.sh
 python tests/test_maximum.py
 
