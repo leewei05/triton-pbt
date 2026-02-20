@@ -8,7 +8,14 @@ sbatch ./scripts/tunnel.slr
 # activate conda env
 source ./scripts/setup.sh
 
-# run test
+# run to check GPU status
+python tests/test_core.py
+GPU: NVIDIA A40
+Triton version: 3.6.0
+Starting Hypothesis tests...
+All tests passed!
+
+# run only test
 pytest tests
 
 # print hypothesis test cases on a single test file
