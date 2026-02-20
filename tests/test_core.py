@@ -2,7 +2,6 @@ import torch
 import triton
 import triton.language as tl
 from hypothesis import given, strategies as st, settings
-import numpy as np
 
 # ----------------
 # data types
