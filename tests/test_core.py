@@ -2,6 +2,7 @@ import torch
 import triton
 import triton.language as tl
 from hypothesis import given, strategies as st, settings
+import pytest
 
 # ----------------
 # data types
@@ -45,13 +46,13 @@ OP_CONFIGS = {
     "ceil": (torch.ceil, float_dtypes_without_fp16),
 }
 
-@settings(max_examples=200, deadline=None)
+# Guarantee that every op has 100 test examples
+@pytest.mark.parametrize("op_name", list(OP_CONFIGS.keys()))
+@settings(max_examples=100, deadline=None)
 @given(
     n=st.integers(min_value=1, max_value=4096),
     block_size=st.sampled_from(BLOCK_SIZES),
     num_warps=st.sampled_from(NUM_WARPS),
-    # Sample the operation name
-    op_name=st.sampled_from(list(OP_CONFIGS.keys())),
     data=st.data()
 )
 def test_unary(n, block_size, num_warps, op_name, data):
