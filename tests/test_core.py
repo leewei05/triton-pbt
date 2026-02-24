@@ -38,12 +38,49 @@ def unary_kernel(x_ptr, z_ptr, n_elements, size: tl.constexpr, op_name: tl.const
         z = tl.abs(x)
     elif op_name == "ceil":
         z = tl.ceil(x)
+    elif op_name == "cos":
+        z = tl.cos(x)
+    elif op_name == "erf":
+        z = tl.erf(x)
+    elif op_name == "exp":
+        z = tl.exp(x)
+    elif op_name == "exp2":
+        z = tl.exp2(x)
+    elif op_name == "floor":
+        z = tl.floor(x)
+    elif op_name == "log":
+        z = tl.log(x)
+    elif op_name == "log2":
+        z = tl.log2(x)
+    elif op_name == "rsqrt":
+        z = tl.rsqrt(x)
+    elif op_name == "sigmoid":
+        z = tl.sigmoid(x)
+    elif op_name == "sin":
+        z = tl.sin(x)
+    elif op_name == "sqrt":
+        z = tl.sqrt(x)
+    elif op_name == "sqrt_rn":
+        # hardware intrinsic mapping
+        z = tl.math.sqrt_rn(x.to(tl.float32)).to(x.dtype)
     
     tl.store(z_ptr + offsets, z, mask=mask)
 
 OP_CONFIGS = {
     "abs": (torch.abs, dtypes_with_bfloat16),
     "ceil": (torch.ceil, float_dtypes_without_fp16),
+    "cos": (torch.cos, float_dtypes_without_fp16),
+    "erf": (torch.erf, float_dtypes_without_fp16),
+    "exp": (torch.exp, float_dtypes_without_fp16),
+    "exp2": (torch.exp2, float_dtypes_without_fp16),
+    "floor": (torch.floor, float_dtypes_without_fp16),
+    "log": (torch.log, float_dtypes_without_fp16),
+    "log2": (torch.log2, float_dtypes_without_fp16),
+    "rsqrt": (torch.rsqrt, float_dtypes_without_fp16),
+    "sigmoid": (torch.sigmoid, float_dtypes_without_fp16),
+    "sin": (torch.sin, float_dtypes_without_fp16),
+    "sqrt": (torch.sqrt, float_dtypes_without_fp16),
+    "sqrt_rn": (torch.sqrt, [torch.float32]),
 }
 
 # Guarantee that every op has 100 test examples
@@ -64,7 +101,13 @@ def test_unary(n, block_size, num_warps, op_name, data):
     dtype = data.draw(st.sampled_from(allowed_dtypes))
 
     if dtype in float_dtypes_with_bfloat16:
-        x_torch = torch.randn(n, device=device, dtype=dtype) * 10
+        if op_name in ["log", "log2", "sqrt", "rsqrt", "sqrt_rn"]:
+            # Ensure inputs are in range [0.1, 10.1] to avoid domain errors
+            # log(negative) -> nan
+            # log(0) -> inf
+            x_torch = torch.rand(n, device=device, dtype=dtype) * 10 + 0.1
+        else:
+            x_torch = torch.randn(n, device=device, dtype=dtype) * 10
     elif dtype == torch.uint8:
         x_torch = torch.randint(0, 255, (n,), device=device, dtype=dtype)
     else:

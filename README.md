@@ -20,4 +20,7 @@ pytest tests
 
 # print hypothesis test cases on a single test file
 pytest tests/test_core.py --hypothesis-verbosity=verbose -s
+
+# test only one op
+pytest tests/test_core.py -k "cos"
 ```
