@@ -11,6 +11,7 @@ uint_dtypes = [torch.uint8]  # Note: PyTorch currently only supports uint8
 integral_dtypes = int_dtypes + uint_dtypes
 
 float_dtypes = [torch.float16, torch.float32, torch.float64]
+float_dtypes_without_fp16 = [torch.float32, torch.float64]
 float_dtypes_with_bfloat16 = float_dtypes + [torch.bfloat16]
 
 dtypes = integral_dtypes + float_dtypes
@@ -24,6 +25,48 @@ NUM_WARPS = [4, 8, 16]
 # ----------------
 # test math ops
 # ----------------
+@triton.jit
+def ceil_kernel(x_ptr, z_ptr, n_elements, size: tl.constexpr):
+    pid = tl.program_id(0)
+    offsets = pid * size + tl.arange(0, size)
+    mask = offsets < n_elements
+
+    x = tl.load(x_ptr + offsets, mask=mask)
+    z = tl.ceil(x)
+    tl.store(z_ptr + offsets, z, mask=mask)
+
+@settings(max_examples=50, deadline=None)
+@given(
+    n=st.integers(min_value=1, max_value=4096),
+    block_size=st.sampled_from(BLOCK_SIZES),
+    num_warps=st.sampled_from(NUM_WARPS),
+    # tl.ceil() doesn't support fp16
+    dtype=st.sampled_from(float_dtypes_without_fp16)
+)
+def test_ceil(n, block_size, num_warps, dtype):
+    device = 'cuda'
+    
+    # Generate random floats (including negatives to test rounding behavior)
+    x_torch = torch.randn(n, device=device, dtype=dtype) * 10
+    z_torch = torch.empty_like(x_torch)
+
+    # Reference result
+    z_ref = torch.ceil(x_torch)
+
+    grid = (triton.cdiv(n, block_size),)
+    ceil_kernel[grid](
+        x_ptr=x_torch, 
+        z_ptr=z_torch, 
+        n_elements=n,
+        size=block_size,
+        num_warps=num_warps
+    )
+
+    # Use a higher tolerance for smaller float types
+    tol = 1e-2 if dtype in [torch.float16, torch.bfloat16] else 1e-5
+    torch.testing.assert_close(z_torch, z_ref, rtol=tol, atol=tol)
+    
+
 @triton.jit
 def abs_kernel(x_ptr, z_ptr, n_elements, size: tl.constexpr):
     pid = tl.program_id(0)
@@ -83,4 +126,5 @@ if __name__ == "__main__":
     print(f"Triton version: {triton.__version__}")
     print("Starting Hypothesis tests...")
     test_abs()
+    test_ceil()
     print("All tests passed!")
