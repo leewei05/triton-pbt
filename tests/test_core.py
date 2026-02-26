@@ -146,12 +146,15 @@ def binary_kernel(x_ptr, y_ptr, z_ptr, n_elements, size: tl.constexpr, op_name: 
         z = x + y
     elif op_name == "-":
         z = x - y
+    elif op_name == "*":
+        z = x * y
 
     tl.store(z_ptr + offsets, z, mask=mask)
 
 BINARY_OP_CONFIGS = {
     "+": (torch.add, dtypes_with_bfloat16),
     "-": (torch.sub, dtypes_with_bfloat16),
+    "*": (torch.mul, dtypes_with_bfloat16),
 }
 
 @pytest.mark.parametrize("op_name", list(BINARY_OP_CONFIGS.keys()))
