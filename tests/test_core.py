@@ -33,7 +33,7 @@ def unary_kernel(x_ptr, z_ptr, n_elements, size: tl.constexpr, op_name: tl.const
     mask = offsets < n_elements
 
     x = tl.load(x_ptr + offsets, mask=mask)
-    
+
     if op_name == "abs":
         z = tl.abs(x)
     elif op_name == "ceil":
@@ -63,7 +63,7 @@ def unary_kernel(x_ptr, z_ptr, n_elements, size: tl.constexpr, op_name: tl.const
     elif op_name == "sqrt_rn":
         # hardware intrinsic mapping
         z = tl.math.sqrt_rn(x.to(tl.float32)).to(x.dtype)
-    
+
     tl.store(z_ptr + offsets, z, mask=mask)
 
 OP_CONFIGS = {
@@ -96,7 +96,7 @@ def test_unary(n, block_size, num_warps, op_name, data):
     # ref_func is a reference from PyTorch or NumPy
     ref_func, allowed_dtypes = OP_CONFIGS[op_name]
     device = 'cuda'
-    
+
     # Sample a dtype from the allowed list for this specific op
     dtype = data.draw(st.sampled_from(allowed_dtypes))
 
@@ -118,8 +118,8 @@ def test_unary(n, block_size, num_warps, op_name, data):
 
     grid = (triton.cdiv(n, block_size),)
     unary_kernel[grid](
-        x_ptr=x_torch, 
-        z_ptr=z_torch, 
+        x_ptr=x_torch,
+        z_ptr=z_torch,
         n_elements=n,
         size=block_size,
         op_name=op_name,
