@@ -129,6 +129,63 @@ def test_unary(n, block_size, num_warps, op_name, data):
     tol = 1e-2 if dtype in [torch.float16, torch.bfloat16] else 1e-5
     torch.testing.assert_close(z_torch, z_ref, rtol=tol, atol=tol)
 
+@triton.jit
+def binary_kernel(x_ptr, y_ptr, z_ptr, n_elements, size: tl.constexpr, op_name: tl.constexpr):
+    pid = tl.program_id(0)
+    offsets = pid * size + tl.arange(0, size)
+    mask = offsets < n_elements
+
+    x = tl.load(x_ptr + offsets, mask=mask)
+    y = tl.load(y_ptr + offsets, mask=mask)
+
+    # Cast to f32 for ops like 'pow' or 'div' if needed
+    x_f = x.to(tl.float32)
+    y_f = y.to(tl.float32)
+
+    if op_name == "+":
+        z = x + y
+
+    tl.store(z_ptr + offsets, z, mask=mask)
+
+BINARY_OP_CONFIGS = {
+    "+": (torch.add, dtypes_with_bfloat16),
+}
+
+@pytest.mark.parametrize("op_name", list(BINARY_OP_CONFIGS.keys()))
+@settings(max_examples=100, deadline=None)
+@given(
+    n=st.integers(min_value=1, max_value=4096),
+    block_size=st.sampled_from(BLOCK_SIZES),
+    num_warps=st.sampled_from(NUM_WARPS),
+    data=st.data()
+)
+def test_binary(n, block_size, num_warps, op_name, data):
+    ref_func, allowed_dtypes = BINARY_OP_CONFIGS[op_name]
+    device = 'cuda'
+    dtype = data.draw(st.sampled_from(allowed_dtypes))
+
+    if dtype in float_dtypes_with_bfloat16:
+        x_torch = torch.randn(n, device=device, dtype=dtype)
+        y_torch = torch.randn(n, device=device, dtype=dtype)
+    elif dtype == torch.uint8:
+        x_torch = torch.randint(0, 255, (n,), device=device, dtype=dtype)
+        y_torch = torch.randint(0, 255, (n,), device=device, dtype=dtype)
+    else:
+        x_torch = torch.randint(-100, 100, (n,), device=device, dtype=dtype)
+        y_torch = torch.randint(-100, 100, (n,), device=device, dtype=dtype)
+
+    z_torch = torch.empty_like(x_torch)
+    z_ref = ref_func(x_torch, y_torch)
+
+    grid = (triton.cdiv(n, block_size),)
+    binary_kernel[grid](
+        x_ptr=x_torch, y_ptr=y_torch, z_ptr=z_torch,
+        n_elements=n, size=block_size, op_name=op_name, num_warps=num_warps
+    )
+
+    tol = 1e-2 if dtype in [torch.float16, torch.bfloat16] else 1e-5
+    torch.testing.assert_close(z_torch, z_ref, rtol=tol, atol=tol)
+
 if __name__ == "__main__":
     print(f"GPU: {torch.cuda.get_device_name(0)}")
     print(f"Triton version: {triton.__version__}")

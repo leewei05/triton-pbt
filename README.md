@@ -21,4 +21,7 @@ pytest tests/test_core.py --hypothesis-verbosity=verbose -s
 
 # test only one op
 pytest tests/test_core.py -k "cos"
+
+# test only one test function
+pytest tests/test_core.py -k "test_binary"
 ```
