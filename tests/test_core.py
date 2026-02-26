@@ -8,6 +8,7 @@ import pytest
 # data types
 # ----------------
 int_dtypes = [torch.int8, torch.int16, torch.int32, torch.int64]
+# TODO: add uint16, uint32, uint64
 uint_dtypes = [torch.uint8]  # Note: PyTorch currently only supports uint8
 integral_dtypes = int_dtypes + uint_dtypes
 
@@ -138,10 +139,6 @@ def binary_kernel(x_ptr, y_ptr, z_ptr, n_elements, size: tl.constexpr, op_name: 
     x = tl.load(x_ptr + offsets, mask=mask)
     y = tl.load(y_ptr + offsets, mask=mask)
 
-    # Cast to f32 for ops like 'pow' or 'div' if needed
-    x_f = x.to(tl.float32)
-    y_f = y.to(tl.float32)
-
     if op_name == "+":
         z = x + y
     elif op_name == "-":
@@ -149,15 +146,39 @@ def binary_kernel(x_ptr, y_ptr, z_ptr, n_elements, size: tl.constexpr, op_name: 
     elif op_name == "*":
         z = x * y
     elif op_name == "/":
-        # Triton promotes 16-bit floating-point / and % to 32-bit because there
-        # are no native div or FRem operations on float16. Since we have to
-        # convert anyway, we may as well take the accuracy bump.
-        if x.dtype == tl.float16 or x.dtype == tl.bfloat16:
-            z = x.to(tl.float32) / y.to(tl.float32)
-        else:
-            z = x / y
+        z = x / y
 
     tl.store(z_ptr + offsets, z, mask=mask)
+
+def get_triton_reference(x, y, op_name, dtype_x, dtype_y):
+    """
+    Implements Triton's internal type promotion rules to generate a bit-accurate reference.
+    """
+    # 1. Floating Point Accuracy Bump
+    # Triton promotes 16-bit / and % to float32 to match hardware behavior
+    is_fp16 = lambda d: d in [torch.float16, torch.bfloat16]
+    if op_name in ('/', '%') and (is_fp16(dtype_x) or is_fp16(dtype_y)):
+        x, y = x.to(torch.float32), y.to(torch.float32)
+
+    # 2. Integer Signedness Promotion (The '256 error' fix)
+    # If mixed signed/unsigned and unsigned is at least as wide as signed,
+    # Triton favors the unsigned type (effectively zero-extending the signed int).
+    width_x = x.element_size() * 8
+    width_y = y.element_size() * 8
+    
+    # Check if we need to force unsigned semantics to match Triton's LLVM backend
+    if (dtype_x == torch.uint8 and dtype_y in int_dtypes and width_x >= width_y):
+        y = y.to(torch.uint8) # Interpret int8 bits as uint8
+    elif (dtype_y == torch.uint8 and dtype_x in int_dtypes and width_y >= width_x):
+        x = x.to(torch.uint8)
+
+    # 3. Reference Math
+    if op_name == "+": return x + y
+    elif op_name == "-": return x - y
+    elif op_name == "*": return x * y
+    elif op_name == "/": return torch.div(x, y)
+
+    return x
 
 BINARY_OP_CONFIGS = {
     "+": (torch.add, dtypes_with_bfloat16),
@@ -176,7 +197,7 @@ BINARY_OP_CONFIGS = {
     data=st.data()
 )
 def test_binary(n, block_size, num_warps, op_name, data):
-    ref_func, allowed_dtypes = BINARY_OP_CONFIGS[op_name]
+    _, allowed_dtypes = BINARY_OP_CONFIGS[op_name]
     device = 'cuda'
 
     dtype_x = data.draw(st.sampled_from(allowed_dtypes))
@@ -201,7 +222,7 @@ def test_binary(n, block_size, num_warps, op_name, data):
     x_torch = gen_data(dtype_x)
     y_torch = gen_data(dtype_y)
 
-    z_ref = ref_func(x_torch, y_torch)
+    z_ref = get_triton_reference(x_torch, y_torch, op_name, dtype_x, dtype_y)
     z_torch = torch.empty_like(z_ref)
 
     grid = (triton.cdiv(n, block_size),)
@@ -220,8 +241,14 @@ def test_binary(n, block_size, num_warps, op_name, data):
             n_elements=n, size=block_size, op_name=op_name, num_warps=num_warps
         )
 
-        out_dtype = z_ref.dtype
-        tol = 1e-2 if out_dtype in [torch.float16, torch.bfloat16] else 1e-5
+        # Find the "weakest link" in the precision chain
+        all_dtypes = [dtype_x, dtype_y, z_ref.dtype]
+        low_prec_types = [torch.float16, torch.bfloat16]
+    
+        if any(d in low_prec_types for d in all_dtypes):
+            tol = 1e-2 # 16-bit precision
+        else:
+            tol = 1e-5 # 32-bit or integer precision
         torch.testing.assert_close(
             z_torch,
             z_ref,
