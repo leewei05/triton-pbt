@@ -12,8 +12,6 @@ source ./scripts/setup.sh
 python tests/test_core.py
 GPU: NVIDIA A40
 Triton version: 3.6.0
-Starting Hypothesis tests...
-All tests passed!
 
 # run only test
 pytest tests

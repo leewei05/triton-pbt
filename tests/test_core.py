@@ -132,6 +132,3 @@ def test_unary(n, block_size, num_warps, op_name, data):
 if __name__ == "__main__":
     print(f"GPU: {torch.cuda.get_device_name(0)}")
     print(f"Triton version: {triton.__version__}")
-    print("Starting Hypothesis tests...")
-    test_unary()
-    print("All tests passed!")
