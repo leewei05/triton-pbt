@@ -206,6 +206,7 @@ BINARY_OP_CONFIGS = {
     "-": (torch.sub, "x - y", dtypes_with_bfloat16),
     "*": (torch.mul, "x * y", dtypes_with_bfloat16),
     "/": (torch.div, "x / y", dtypes_with_bfloat16),
+    "%": (torch.fmod, "x % y", dtypes_with_bfloat16),
 }
 
 @pytest.mark.parametrize("op_name", list(BINARY_OP_CONFIGS.keys()))
@@ -229,7 +230,7 @@ def test_binary(n, block_size, num_warps, op_name, data):
     is_int_y = dtype_y in int_dtypes
 
     mixed_signedness = (is_u_x and is_int_y) or (is_int_x and is_u_y)
-    should_fail = op_name == "/" and mixed_signedness
+    should_fail = (op_name in ["/", "%"]) and mixed_signedness
 
     def gen_data(dtype):
         if dtype in float_dtypes_with_bfloat16:
@@ -241,6 +242,16 @@ def test_binary(n, block_size, num_warps, op_name, data):
 
     x_torch = gen_data(dtype_x)
     y_torch = gen_data(dtype_y)
+
+    if op_name in ["/", "%"]:
+        # We cannot assume based on the whole tensor easily, 
+        # so we ensure y doesn't contain zeros.
+        assume(not torch.any(y_torch == 0))
+
+    if op_name == "%" and dtype_y in float_dtypes_with_bfloat16:
+        # Ensure the divisor isn't so small that precision loss is guaranteed
+        # floor(x/y) should not exceed a reasonable precision limit
+        assume(torch.all(torch.abs(x_torch / y_torch) < 1e5))
 
     z_ref = get_triton_reference(ref_func, x_torch, y_torch, op_name, dtype_x, dtype_y)
     z_torch = torch.empty_like(z_ref)
