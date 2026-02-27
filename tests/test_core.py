@@ -37,6 +37,45 @@ def patch_kernel(template_fn, to_replace):
 
     return new_kernel
 
+def debug_mismatch(op_name, n, block_size, z_torch, z_ref, tol, dtypes, *inputs):
+    """
+    Unified diagnostic report for Triton kernel failures.
+    Works for both Unary and Binary ops.
+    """
+    print(f"\n{'!'*20} TRITON DEBUG REPORT {'!'*20}")
+    print(f"Op: {op_name} | N: {n} | Block: {block_size}")
+    print(f"Dtypes: {', '.join([str(d) for d in dtypes])} | Out: {z_ref.dtype}")
+    
+    # 1. Locate the exact indices where bits differed
+    # We use a strict check to find exactly where it failed the tolerance
+    mask = ~torch.isclose(z_torch, z_ref, rtol=tol, atol=tol, equal_nan=True)
+    indices = torch.nonzero(mask).flatten()
+    num_errors = len(indices)
+    
+    print(f"Mismatched Elements: {num_errors} / {n} ({(num_errors/n)*100:.2f}%)")
+    
+    # 2. Only show the first 5 errors to keep it clean
+    peek = indices[:5]
+    
+    print(f"\nSample of failing indices: {peek.tolist()}")
+    
+    # 3. Dynamically print inputs (handles X or X, Y)
+    for i, inp in enumerate(inputs):
+        label = "X" if len(inputs) == 1 else ("X" if i == 0 else "Y")
+        print(f"Input {label} at failure:  {inp[peek].tolist()}")
+
+    print(f"Triton Result:       {z_torch[peek].tolist()}")
+    print(f"Expected Reference:  {z_ref[peek].tolist()}")
+    
+    # 4. Bit-level inspection for the first failure (Compiler Engineer's favorite)
+    if num_errors > 0:
+        idx = peek[0]
+        print(f"\n[Bit Inspection @ idx {idx}]")
+        print(f"Triton Hex: {hex(z_torch[idx].view(torch.int32).item()) if z_torch.element_size() == 4 else 'N/A'}")
+        print(f"Ref Hex:    {hex(z_ref[idx].view(torch.int32).item()) if z_ref.element_size() == 4 else 'N/A'}")
+        
+    print(f"{'!'*60}\n")
+
 # ----------------
 # test math ops
 # ----------------
@@ -118,7 +157,14 @@ def test_unary(n, block_size, num_warps, op_name, data):
     )
 
     tol = 1e-2 if dtype in [torch.float16, torch.bfloat16] else 1e-5
-    torch.testing.assert_close(z_torch, z_ref, rtol=tol, atol=tol)
+    try:
+        torch.testing.assert_close(z_torch, z_ref, rtol=tol, atol=tol)
+    except AssertionError as e:
+        debug_mismatch(
+            op_name, n, block_size, z_torch, z_ref, tol, 
+            [dtype], x_torch
+        )
+        raise e
 
 @triton.jit
 def binary_kernel(x_ptr, y_ptr, z_ptr, n_elements, size: tl.constexpr, op_name: tl.constexpr):
@@ -228,15 +274,22 @@ def test_binary(n, block_size, num_warps, op_name, data):
             tol = 1e-2 # 16-bit precision
         else:
             tol = 1e-5 # 32-bit or integer precision
-        torch.testing.assert_close(
-            z_torch,
-            z_ref,
-            rtol=tol,
-            atol=tol,
-            # Treats NaN == NaN as True. We're testing the output of Triton and PyTorch
-            # Not the semantics of NaN == NaN.
-            equal_nan=True
-        )
+        try:
+            torch.testing.assert_close(
+                z_torch,
+                z_ref,
+                rtol=tol,
+                atol=tol,
+                # Treats NaN == NaN as True. We're testing the output of Triton and PyTorch
+                # Not the semantics of NaN == NaN.
+                equal_nan=True
+            )
+        except AssertionError as e:
+            debug_mismatch(
+                op_name, n, block_size, z_torch, z_ref, tol, 
+                [dtype_x, dtype_y], x_torch, y_torch
+            )
+            raise e
 
 if __name__ == "__main__":
     print(f"GPU: {torch.cuda.get_device_name(0)}")

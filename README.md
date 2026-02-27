@@ -24,4 +24,10 @@ pytest tests/test_core.py -k "cos"
 
 # test only one test function
 pytest tests/test_core.py -k "test_binary"
+
+# captures print to stdout
+pytest tests/test_core.py -k "test_binary" -s
+
+# rerun last failed test case
+pytest tests/test_core.py -k "test_binary" -s --lf
 ```
