@@ -150,17 +150,15 @@ def binary_kernel(x_ptr, y_ptr, z_ptr, n_elements, size: tl.constexpr, op_name: 
 
     tl.store(z_ptr + offsets, z, mask=mask)
 
-def get_triton_reference(x, y, op_name, dtype_x, dtype_y):
+def get_triton_reference(ref_func, x, y, op_name, dtype_x, dtype_y):
     """
     Implements Triton's internal type promotion rules to generate a bit-accurate reference.
     """
-    # 1. Floating Point Accuracy Bump
     # Triton promotes 16-bit / and % to float32 to match hardware behavior
     is_fp16 = lambda d: d in [torch.float16, torch.bfloat16]
     if op_name in ('/', '%') and (is_fp16(dtype_x) or is_fp16(dtype_y)):
         x, y = x.to(torch.float32), y.to(torch.float32)
 
-    # 2. Integer Signedness Promotion (The '256 error' fix)
     # If mixed signed/unsigned and unsigned is at least as wide as signed,
     # Triton favors the unsigned type (effectively zero-extending the signed int).
     width_x = x.element_size() * 8
@@ -172,20 +170,13 @@ def get_triton_reference(x, y, op_name, dtype_x, dtype_y):
     elif (dtype_y == torch.uint8 and dtype_x in int_dtypes and width_y >= width_x):
         x = x.to(torch.uint8)
 
-    # 3. Reference Math
-    if op_name == "+": return x + y
-    elif op_name == "-": return x - y
-    elif op_name == "*": return x * y
-    elif op_name == "/": return torch.div(x, y)
-
-    return x
+    return ref_func(x, y)
 
 BINARY_OP_CONFIGS = {
     "+": (torch.add, dtypes_with_bfloat16),
     "-": (torch.sub, dtypes_with_bfloat16),
     "*": (torch.mul, dtypes_with_bfloat16),
-    # TODO: test floating point numbers
-    "/": (torch.div, integral_dtypes),
+    "/": (torch.div, dtypes_with_bfloat16),
 }
 
 @pytest.mark.parametrize("op_name", list(BINARY_OP_CONFIGS.keys()))
@@ -197,7 +188,7 @@ BINARY_OP_CONFIGS = {
     data=st.data()
 )
 def test_binary(n, block_size, num_warps, op_name, data):
-    _, allowed_dtypes = BINARY_OP_CONFIGS[op_name]
+    ref_func, allowed_dtypes = BINARY_OP_CONFIGS[op_name]
     device = 'cuda'
 
     dtype_x = data.draw(st.sampled_from(allowed_dtypes))
@@ -222,7 +213,7 @@ def test_binary(n, block_size, num_warps, op_name, data):
     x_torch = gen_data(dtype_x)
     y_torch = gen_data(dtype_y)
 
-    z_ref = get_triton_reference(x_torch, y_torch, op_name, dtype_x, dtype_y)
+    z_ref = get_triton_reference(ref_func, x_torch, y_torch, op_name, dtype_x, dtype_y)
     z_torch = torch.empty_like(z_ref)
 
     grid = (triton.cdiv(n, block_size),)
