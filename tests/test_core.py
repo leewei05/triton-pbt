@@ -3,6 +3,7 @@ import triton
 import triton.language as tl
 from hypothesis import given, assume, strategies as st, settings
 import pytest
+import copy
 
 # ----------------
 # data types
@@ -23,6 +24,18 @@ dtypes_with_bfloat16 = dtypes + [torch.bfloat16]
 # 4 * 32, 8 * 32 ...
 BLOCK_SIZES = [128, 256, 512, 1024]
 NUM_WARPS = [4, 8, 16]
+
+def patch_kernel(template_fn, to_replace):
+    src = template_fn.src
+    for key, value in to_replace.items():
+        src = src.replace(key, value)
+
+    # create a new JITFunction object to replace
+    new_kernel = triton.runtime.jit.JITFunction(template_fn.fn)
+    new_kernel.hash = None
+    new_kernel._src = src
+
+    return new_kernel
 
 # ----------------
 # test math ops
@@ -139,14 +152,7 @@ def binary_kernel(x_ptr, y_ptr, z_ptr, n_elements, size: tl.constexpr, op_name: 
     x = tl.load(x_ptr + offsets, mask=mask)
     y = tl.load(y_ptr + offsets, mask=mask)
 
-    if op_name == "+":
-        z = x + y
-    elif op_name == "-":
-        z = x - y
-    elif op_name == "*":
-        z = x * y
-    elif op_name == "/":
-        z = x / y
+    z = BINARY_EXPR
 
     tl.store(z_ptr + offsets, z, mask=mask)
 
@@ -173,10 +179,10 @@ def get_triton_reference(ref_func, x, y, op_name, dtype_x, dtype_y):
     return ref_func(x, y)
 
 BINARY_OP_CONFIGS = {
-    "+": (torch.add, dtypes_with_bfloat16),
-    "-": (torch.sub, dtypes_with_bfloat16),
-    "*": (torch.mul, dtypes_with_bfloat16),
-    "/": (torch.div, dtypes_with_bfloat16),
+    "+": (torch.add, "x + y", dtypes_with_bfloat16),
+    "-": (torch.sub, "x - y", dtypes_with_bfloat16),
+    "*": (torch.mul, "x * y", dtypes_with_bfloat16),
+    "/": (torch.div, "x / y", dtypes_with_bfloat16),
 }
 
 @pytest.mark.parametrize("op_name", list(BINARY_OP_CONFIGS.keys()))
@@ -188,7 +194,7 @@ BINARY_OP_CONFIGS = {
     data=st.data()
 )
 def test_binary(n, block_size, num_warps, op_name, data):
-    ref_func, allowed_dtypes = BINARY_OP_CONFIGS[op_name]
+    ref_func, triton_expr, allowed_dtypes = BINARY_OP_CONFIGS[op_name]
     device = 'cuda'
 
     dtype_x = data.draw(st.sampled_from(allowed_dtypes))
@@ -217,17 +223,22 @@ def test_binary(n, block_size, num_warps, op_name, data):
     z_torch = torch.empty_like(z_ref)
 
     grid = (triton.cdiv(n, block_size),)
+    # update op placeholder
+    patched_kernel = patch_kernel(
+        binary_kernel,
+        {"BINARY_EXPR": triton_expr}
+    )
 
     if should_fail:
        with pytest.raises(triton.TritonError, match="signedness"):
             # we don't care about the output since it failed
             z_placeholder = torch.empty_like(x_torch)
-            binary_kernel[grid](
+            patched_kernel[grid](
                 x_ptr=x_torch, y_ptr=y_torch, z_ptr=z_placeholder,
                 n_elements=n, size=block_size, op_name=op_name, num_warps=num_warps
             )
     else:
-        binary_kernel[grid](
+        patched_kernel[grid](
             x_ptr=x_torch, y_ptr=y_torch, z_ptr=z_torch,
             n_elements=n, size=block_size, op_name=op_name, num_warps=num_warps
         )
