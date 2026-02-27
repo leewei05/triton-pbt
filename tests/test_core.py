@@ -48,53 +48,25 @@ def unary_kernel(x_ptr, z_ptr, n_elements, size: tl.constexpr, op_name: tl.const
 
     x = tl.load(x_ptr + offsets, mask=mask)
 
-    if op_name == "abs":
-        z = tl.abs(x)
-    elif op_name == "ceil":
-        z = tl.ceil(x)
-    elif op_name == "cos":
-        z = tl.cos(x)
-    elif op_name == "erf":
-        z = tl.erf(x)
-    elif op_name == "exp":
-        z = tl.exp(x)
-    elif op_name == "exp2":
-        z = tl.exp2(x)
-    elif op_name == "floor":
-        z = tl.floor(x)
-    elif op_name == "log":
-        z = tl.log(x)
-    elif op_name == "log2":
-        z = tl.log2(x)
-    elif op_name == "rsqrt":
-        z = tl.rsqrt(x)
-    elif op_name == "sigmoid":
-        z = tl.sigmoid(x)
-    elif op_name == "sin":
-        z = tl.sin(x)
-    elif op_name == "sqrt":
-        z = tl.sqrt(x)
-    elif op_name == "sqrt_rn":
-        # hardware intrinsic mapping
-        z = tl.math.sqrt_rn(x.to(tl.float32)).to(x.dtype)
+    z = UNARY_EXPR
 
     tl.store(z_ptr + offsets, z, mask=mask)
 
 OP_CONFIGS = {
-    "abs": (torch.abs, dtypes_with_bfloat16),
-    "ceil": (torch.ceil, float_dtypes_without_fp16),
-    "cos": (torch.cos, float_dtypes_without_fp16),
-    "erf": (torch.erf, float_dtypes_without_fp16),
-    "exp": (torch.exp, float_dtypes_without_fp16),
-    "exp2": (torch.exp2, float_dtypes_without_fp16),
-    "floor": (torch.floor, float_dtypes_without_fp16),
-    "log": (torch.log, float_dtypes_without_fp16),
-    "log2": (torch.log2, float_dtypes_without_fp16),
-    "rsqrt": (torch.rsqrt, float_dtypes_without_fp16),
-    "sigmoid": (torch.sigmoid, float_dtypes_without_fp16),
-    "sin": (torch.sin, float_dtypes_without_fp16),
-    "sqrt": (torch.sqrt, float_dtypes_without_fp16),
-    "sqrt_rn": (torch.sqrt, [torch.float32]),
+    "abs": (torch.abs, "tl.abs(x)", dtypes_with_bfloat16),
+    "ceil": (torch.ceil, "tl.ceil(x)", float_dtypes_without_fp16),
+    "cos": (torch.cos, "tl.cos(x)", float_dtypes_without_fp16),
+    "erf": (torch.erf, "tl.erf(x)", float_dtypes_without_fp16),
+    "exp": (torch.exp, "tl.exp(x)", float_dtypes_without_fp16),
+    "exp2": (torch.exp2, "tl.exp2(x)", float_dtypes_without_fp16),
+    "floor": (torch.floor, "tl.floor(x)", float_dtypes_without_fp16),
+    "log": (torch.log, "tl.log(x)", float_dtypes_without_fp16),
+    "log2": (torch.log2, "tl.log2(x)", float_dtypes_without_fp16),
+    "rsqrt": (torch.rsqrt, "tl.rsqrt(x)", float_dtypes_without_fp16),
+    "sigmoid": (torch.sigmoid, "tl.sigmoid(x)", float_dtypes_without_fp16),
+    "sin": (torch.sin, "tl.sin(x)", float_dtypes_without_fp16),
+    "sqrt": (torch.sqrt, "tl.sqrt(x)", float_dtypes_without_fp16),
+    "sqrt_rn": (torch.sqrt, "tl.math.sqrt_rn(x.to(tl.float32)).to(x.dtype)", [torch.float32]),
 }
 
 # Guarantee that every op has 100 test examples
@@ -108,7 +80,7 @@ OP_CONFIGS = {
 )
 def test_unary(n, block_size, num_warps, op_name, data):
     # ref_func is a reference from PyTorch or NumPy
-    ref_func, allowed_dtypes = OP_CONFIGS[op_name]
+    ref_func, triton_expr, allowed_dtypes = OP_CONFIGS[op_name]
     device = 'cuda'
 
     # Sample a dtype from the allowed list for this specific op
@@ -131,7 +103,12 @@ def test_unary(n, block_size, num_warps, op_name, data):
     z_ref = ref_func(x_torch)
 
     grid = (triton.cdiv(n, block_size),)
-    unary_kernel[grid](
+    patched_kernel = patch_kernel(
+        unary_kernel,
+        {"UNARY_EXPR": triton_expr}
+    )
+
+    patched_kernel[grid](
         x_ptr=x_torch,
         z_ptr=z_torch,
         n_elements=n,
