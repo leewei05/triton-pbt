@@ -15,7 +15,7 @@ def matmul_kernel(
     BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
 ):
     pid = tl.program_id(0)
-    
+
     # map program ID to a tile in the C matrix
     num_pid_n = tl.cdiv(N, BLOCK_N)
     pid_m = pid // num_pid_n
@@ -30,14 +30,14 @@ def matmul_kernel(
     b_ptrs = b_ptr + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
 
     accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-    
+
     for k in range(0, tl.cdiv(K, BLOCK_K)):
         a = tl.load(a_ptrs)
         b = tl.load(b_ptrs)
-        
+
         # using default Nvidia tf32 precision
         accumulator = tl.dot(a, b, acc=accumulator, out_dtype=tl.float32)
-        
+
         # pointer advancement along the K dimension
         a_ptrs += BLOCK_K * stride_ak
         b_ptrs += BLOCK_K * stride_bk
@@ -45,9 +45,9 @@ def matmul_kernel(
     offs_cm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     offs_cn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     output_ptrs = output_ptr + stride_cm * offs_cm[:, None] + stride_cn * offs_cn[None, :]
-    
+
     tl.store(output_ptrs, accumulator.to(output_ptr.dtype.element_ty))
-    
+
 @settings(max_examples=50, deadline=None)
 @given(
     # standard shapes that are multiples of 16 for Tensor Cores since we don't have masking yet
@@ -71,7 +71,7 @@ def test_matmul_basic(M, N, K, data):
     assume(M % bm == 0)
     assume(N % bn == 0)
     assume(K % bk == 0)
-    
+
     a = torch.randn((M, K), device=device, dtype=dtype)
     b = torch.randn((K, N), device=device, dtype=dtype)
     c_triton = torch.empty((M, N), device=device, dtype=dtype)
