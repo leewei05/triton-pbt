@@ -45,20 +45,20 @@ def debug_mismatch(op_name, n, block_size, z_torch, z_ref, tol, dtypes, *inputs)
     print(f"\n{'!'*20} TRITON DEBUG REPORT {'!'*20}")
     print(f"Op: {op_name} | N: {n} | Block: {block_size}")
     print(f"Dtypes: {', '.join([str(d) for d in dtypes])} | Out: {z_ref.dtype}")
-    
+
     # 1. Locate the exact indices where bits differed
     # We use a strict check to find exactly where it failed the tolerance
     mask = ~torch.isclose(z_torch, z_ref, rtol=tol, atol=tol, equal_nan=True)
     indices = torch.nonzero(mask).flatten()
     num_errors = len(indices)
-    
+
     print(f"Mismatched Elements: {num_errors} / {n} ({(num_errors/n)*100:.2f}%)")
-    
+
     # 2. Only show the first 5 errors to keep it clean
     peek = indices[:5]
-    
+
     print(f"\nSample of failing indices: {peek.tolist()}")
-    
+
     # 3. Dynamically print inputs (handles X or X, Y)
     for i, inp in enumerate(inputs):
         label = "X" if len(inputs) == 1 else ("X" if i == 0 else "Y")
@@ -66,14 +66,14 @@ def debug_mismatch(op_name, n, block_size, z_torch, z_ref, tol, dtypes, *inputs)
 
     print(f"Triton Result:       {z_torch[peek].tolist()}")
     print(f"Expected Reference:  {z_ref[peek].tolist()}")
-    
+
     # 4. Bit-level inspection for the first failure (Compiler Engineer's favorite)
     if num_errors > 0:
         idx = peek[0]
         print(f"\n[Bit Inspection @ idx {idx}]")
         print(f"Triton Hex: {hex(z_torch[idx].view(torch.int32).item()) if z_torch.element_size() == 4 else 'N/A'}")
         print(f"Ref Hex:    {hex(z_ref[idx].view(torch.int32).item()) if z_ref.element_size() == 4 else 'N/A'}")
-        
+
     print(f"{'!'*60}\n")
 
 # ----------------
@@ -161,7 +161,7 @@ def test_unary(n, block_size, num_warps, op_name, data):
         torch.testing.assert_close(z_torch, z_ref, rtol=tol, atol=tol)
     except AssertionError as e:
         debug_mismatch(
-            op_name, n, block_size, z_torch, z_ref, tol, 
+            op_name, n, block_size, z_torch, z_ref, tol,
             [dtype], x_torch
         )
         raise e
@@ -192,7 +192,7 @@ def get_triton_reference(ref_func, x, y, op_name, dtype_x, dtype_y):
     # Triton favors the unsigned type (effectively zero-extending the signed int).
     width_x = x.element_size() * 8
     width_y = y.element_size() * 8
-    
+
     # Check if we need to force unsigned semantics to match Triton's LLVM backend
     if (dtype_x == torch.uint8 and dtype_y in int_dtypes and width_x >= width_y):
         y = y.to(torch.uint8) # Interpret int8 bits as uint8
@@ -244,7 +244,7 @@ def test_binary(n, block_size, num_warps, op_name, data):
     y_torch = gen_data(dtype_y)
 
     if op_name in ["/", "%"]:
-        # We cannot assume based on the whole tensor easily, 
+        # We cannot assume based on the whole tensor easily,
         # so we ensure y doesn't contain zeros.
         assume(not torch.any(y_torch == 0))
 
@@ -280,7 +280,7 @@ def test_binary(n, block_size, num_warps, op_name, data):
         # Find the "weakest link" in the precision chain
         all_dtypes = [dtype_x, dtype_y, z_ref.dtype]
         low_prec_types = [torch.float16, torch.bfloat16]
-    
+
         if any(d in low_prec_types for d in all_dtypes):
             tol = 1e-2 # 16-bit precision
         else:
@@ -297,7 +297,7 @@ def test_binary(n, block_size, num_warps, op_name, data):
             )
         except AssertionError as e:
             debug_mismatch(
-                op_name, n, block_size, z_torch, z_ref, tol, 
+                op_name, n, block_size, z_torch, z_ref, tol,
                 [dtype_x, dtype_y], x_torch, y_torch
             )
             raise e
