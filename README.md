@@ -9,7 +9,7 @@ sbatch ./scripts/tunnel.slr
 source ./scripts/setup.sh
 
 # run to check GPU status
-python tests/test_core.py
+python tests/test_math.py
 GPU: NVIDIA A40
 Triton version: 3.6.0
 
@@ -17,17 +17,17 @@ Triton version: 3.6.0
 pytest tests
 
 # print hypothesis test cases on a single test file
-pytest tests/test_core.py --hypothesis-verbosity=verbose -s
+pytest tests/test_math.py --hypothesis-verbosity=verbose -s
 
 # test only one op
-pytest tests/test_core.py -k "cos"
+pytest tests/test_math.py -k "cos"
 
 # test only one test function
-pytest tests/test_core.py -k "test_binary"
+pytest tests/test_math.py -k "test_binary"
 
 # captures print to stdout
-pytest tests/test_core.py -k "test_binary" -s
+pytest tests/test_math.py -k "test_binary" -s
 
 # rerun last failed test case
-pytest tests/test_core.py -k "test_binary" -s --lf
+pytest tests/test_math.py -k "test_binary" -s --lf
 ```
