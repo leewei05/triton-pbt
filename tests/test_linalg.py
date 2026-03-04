@@ -50,19 +50,27 @@ def matmul_kernel(
     
 @settings(max_examples=50, deadline=None)
 @given(
-    # Start with standard shapes that are multiples of 16 for Tensor Cores
-    M=st.sampled_from([128, 256]),
-    N=st.sampled_from([128, 256]),
-    K=st.sampled_from([32, 64]),
-    # Testing different block configurations
-    bm=st.sampled_from([32, 64]),
-    bn=st.sampled_from([32, 64]),
-    bk=st.sampled_from([16, 32]),
+    # standard shapes that are multiples of 16 for Tensor Cores since we don't have masking yet
+    M=st.integers(min_value=1, max_value=128).map(lambda x: x * 16),
+    N=st.integers(min_value=1, max_value=128).map(lambda x: x * 16),
+    K=st.integers(min_value=1, max_value=32).map(lambda x: x * 16),
+    data=st.data()
 )
-def test_matmul_basic(M, N, K, bm, bn, bk):
+def test_matmul_basic(M, N, K, data):
     device = 'cuda'
     # Use float16 for the inputs to ensure Tensor Core usage
     dtype = torch.float16
+    # Dynamically draw block sizes that are valid for the chosen M, N, K
+    bm = data.draw(st.sampled_from([16, 32, 64]))
+    bn = data.draw(st.sampled_from([16, 32, 64]))
+    bk = data.draw(st.sampled_from([16, 32]))
+
+    # block is larger than the matrix (for now)
+    assume(bm <= M and bn <= N and bk <= K)
+    # TODO: add masking, right now we test standard shapes
+    assume(M % bm == 0)
+    assume(N % bn == 0)
+    assume(K % bk == 0)
     
     a = torch.randn((M, K), device=device, dtype=dtype)
     b = torch.randn((K, N), device=device, dtype=dtype)
