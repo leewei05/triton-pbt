@@ -70,8 +70,15 @@ def test_matmul_basic(M, N, K, data):
     # block is larger than the matrix (for now)
     assume(bm <= M and bn <= N and bk <= K)
 
-    a = torch.randn((M, K), device=device, dtype=dtype)
-    b = torch.randn((K, N), device=device, dtype=dtype)
+    # extra padding to simulate real-world applications
+    padding = data.draw(st.integers(min_value=0, max_value=32))
+    a_full = torch.randn((M, K + padding), device=device, dtype=dtype)
+    # 'a' is now logically M x K, but its stride(0) is (K + padding)
+    a = a_full[:, :K]
+    # The same for B: (K + padding) x N, sliced to K x N
+    b_full = torch.randn((K + padding, N), device=device, dtype=dtype)
+    b = b_full[:K, :]
+
     c_triton = torch.empty((M, N), device=device, dtype=dtype)
     # Compute reference in FP64 to get the "true" mathematical result
     c_ref = torch.matmul(a.to(torch.float64), b.to(torch.float64)).to(dtype)
