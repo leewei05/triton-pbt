@@ -56,9 +56,10 @@ def matmul_kernel(
     M=st.integers(min_value=1, max_value=1024),
     N=st.integers(min_value=1, max_value=1024),
     K=st.integers(min_value=1, max_value=1024),
+    num_warps=st.sampled_from(NUM_WARPS),
     data=st.data()
 )
-def test_matmul_basic(M, N, K, data):
+def test_matmul_basic(M, N, K, num_warps, data):
     device = 'cuda'
     # Use float16 for the inputs to ensure Tensor Core usage
     dtype = torch.float16
@@ -91,7 +92,7 @@ def test_matmul_basic(M, N, K, data):
         b.stride(0), b.stride(1),
         c_triton.stride(0), c_triton.stride(1),
         BLOCK_M=bm, BLOCK_N=bn, BLOCK_K=bk,
-        num_warps=4
+        num_warps=num_warps
     )
 
     # Matmul results can drift slightly due to floating point accumulation order
