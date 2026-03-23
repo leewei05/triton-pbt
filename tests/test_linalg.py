@@ -53,9 +53,9 @@ def matmul_kernel(
 
 @settings(max_examples=100, deadline=None)
 @given(
-    M=st.integers(min_value=1, max_value=512),
-    N=st.integers(min_value=1, max_value=512),
-    K=st.integers(min_value=1, max_value=128),
+    M=st.integers(min_value=1, max_value=1024),
+    N=st.integers(min_value=1, max_value=1024),
+    K=st.integers(min_value=1, max_value=1024),
     data=st.data()
 )
 def test_matmul_basic(M, N, K, data):
@@ -73,7 +73,8 @@ def test_matmul_basic(M, N, K, data):
     a = torch.randn((M, K), device=device, dtype=dtype)
     b = torch.randn((K, N), device=device, dtype=dtype)
     c_triton = torch.empty((M, N), device=device, dtype=dtype)
-    c_ref = torch.matmul(a, b)
+    # Compute reference in FP64 to get the "true" mathematical result
+    c_ref = torch.matmul(a.to(torch.float64), b.to(torch.float64)).to(dtype)
 
     grid = (triton.cdiv(M, bm) * triton.cdiv(N, bn),)
     matmul_kernel[grid](
