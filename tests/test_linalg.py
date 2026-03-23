@@ -21,39 +21,41 @@ def matmul_kernel(
     pid_m = pid // num_pid_n
     pid_n = pid % num_pid_n
 
-    offs_am = (pid_m * BLOCK_M + tl.arange(0, BLOCK_M)) % M
-    offs_bn = (pid_n * BLOCK_N + tl.arange(0, BLOCK_N)) % N
-    offs_k = tl.arange(0, BLOCK_K)
+    offs_am = (pid_m * BLOCK_M + tl.arange(0, BLOCK_M))
+    offs_bn = (pid_n * BLOCK_N + tl.arange(0, BLOCK_N))
 
-    # create 2D matrix of memory addresses
-    a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
-    b_ptrs = b_ptr + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
+    # masking
+    mask_m = offs_am < M
+    mask_n = offs_bn < N
 
     accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
     for k in range(0, tl.cdiv(K, BLOCK_K)):
-        a = tl.load(a_ptrs)
-        b = tl.load(b_ptrs)
+        offs_k = k * BLOCK_K + tl.arange(0, BLOCK_K)
+        mask_k = offs_k < K
 
+        # create 2D matrix of memory addresses
+        a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
+        b_ptrs = b_ptr + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
+
+        # other=0.0 pads out-of-bound areas to 0.0
+        a = tl.load(a_ptrs, mask=mask_m[:, None] & mask_k[None, :], other=0.0)
+        b = tl.load(b_ptrs, mask=mask_k[:, None] & mask_n[None, :], other=0.0)
         # using default Nvidia tf32 precision
         accumulator = tl.dot(a, b, acc=accumulator, out_dtype=tl.float32)
-
-        # pointer advancement along the K dimension
-        a_ptrs += BLOCK_K * stride_ak
-        b_ptrs += BLOCK_K * stride_bk
 
     offs_cm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     offs_cn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     output_ptrs = output_ptr + stride_cm * offs_cm[:, None] + stride_cn * offs_cn[None, :]
 
-    tl.store(output_ptrs, accumulator.to(output_ptr.dtype.element_ty))
+    # write back to valid elements
+    tl.store(output_ptrs, accumulator.to(output_ptr.dtype.element_ty), mask=mask_m[:, None] & mask_n[None, :])
 
-@settings(max_examples=50, deadline=None)
+@settings(max_examples=100, deadline=None)
 @given(
-    # standard shapes that are multiples of 16 for Tensor Cores since we don't have masking yet
-    M=st.integers(min_value=1, max_value=128).map(lambda x: x * 16),
-    N=st.integers(min_value=1, max_value=128).map(lambda x: x * 16),
-    K=st.integers(min_value=1, max_value=32).map(lambda x: x * 16),
+    M=st.integers(min_value=1, max_value=512),
+    N=st.integers(min_value=1, max_value=512),
+    K=st.integers(min_value=1, max_value=128),
     data=st.data()
 )
 def test_matmul_basic(M, N, K, data):
@@ -67,10 +69,6 @@ def test_matmul_basic(M, N, K, data):
 
     # block is larger than the matrix (for now)
     assume(bm <= M and bn <= N and bk <= K)
-    # TODO: add masking, right now we test standard shapes
-    assume(M % bm == 0)
-    assume(N % bn == 0)
-    assume(K % bk == 0)
 
     a = torch.randn((M, K), device=device, dtype=dtype)
     b = torch.randn((K, N), device=device, dtype=dtype)
