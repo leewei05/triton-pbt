@@ -62,7 +62,6 @@ def matmul_kernel(
     # write back to valid elements
     tl.store(output_ptrs, accumulator.to(output_ptr.dtype.element_ty), mask=mask_m[:, None] & mask_n[None, :])
 
-@settings(max_examples=100, deadline=None)
 @given(
     M=st.integers(min_value=1, max_value=1024),
     N=st.integers(min_value=1, max_value=1024),
@@ -77,9 +76,13 @@ def test_matmul_basic(M, N, K, is_tran, num_stages, num_warps, data):
     # Use float16 for the inputs to ensure Tensor Core usage
     dtype = torch.float16
     # Dynamically draw block sizes that are valid for the chosen M, N, K
-    bm = data.draw(st.sampled_from([16, 32, 64]))
-    bn = data.draw(st.sampled_from([16, 32, 64]))
-    bk = data.draw(st.sampled_from([16, 32]))
+    #bm = data.draw(st.sampled_from([16, 32, 64]))
+    #bn = data.draw(st.sampled_from([16, 32, 64]))
+    #bk = data.draw(st.sampled_from([16, 32]))
+
+    bm = data.draw(st.sampled_from([64, 128]))
+    bn = data.draw(st.sampled_from([64, 128, 256]))
+    bk = data.draw(st.sampled_from([32, 64]))
 
     # block is larger than the matrix (for now)
     assume(bm <= M and bn <= N and bk <= K)
@@ -114,6 +117,7 @@ def test_matmul_basic(M, N, K, is_tran, num_stages, num_warps, data):
         num_warps=num_warps,
         num_stages=num_stages,
     )
+    print_kernel_stats(matmul_kernel)
 
     # Matmul results can drift slightly due to floating point accumulation order
     torch.testing.assert_close(c_triton, c_ref, atol=1e-2, rtol=1e-2)

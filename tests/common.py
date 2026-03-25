@@ -72,3 +72,42 @@ def debug_mismatch(op_name, n, block_size, z_torch, z_ref, tol, dtypes, *inputs)
         print(f"Ref Hex:    {hex(z_ref[idx].view(torch.int32).item()) if z_ref.element_size() == 4 else 'N/A'}")
 
     print(f"{'!'*60}\n")
+
+def print_kernel_stats(kernel):
+    """
+    Extracts and formats metadata from the Triton GPU compiler backend.
+    Uses n_regs and n_spills directly from the CompiledKernel instance.
+    """
+    print("\n" + "="*95)
+    print(f"{'PROFILING TRITON KERNEL: ' + kernel.__name__:^95}")
+    print("="*95)
+    print(f"{'Device':<10} | {'Regs':<5} | {'Spills':<10} | {'SRAM (KB)':<10} | {'Metadata'}")
+    print("-" * 95)
+
+    for device, cache_info in kernel.device_caches.items():
+        kernel_cache = cache_info[0]
+
+        for key, compiled_bin in kernel_cache.items():
+            # 1. Trigger the lazy initialization to populate n_regs and n_spills
+            compiled_bin._init_handles()
+
+            # 2. Access the stats directly from the object (not metadata)
+            regs = compiled_bin.n_regs
+            spills = compiled_bin.n_spills
+
+            # 3. Access hardware/scheduling info from the metadata namedtuple
+            shared_bytes = compiled_bin.metadata.shared
+            warps = compiled_bin.metadata.num_warps
+            # num_stages is a constexpr, so it's in the metadata
+            stages = getattr(compiled_bin.metadata, 'num_stages', 1)
+
+            # Formatting
+            sram_kb = shared_bytes / 1024
+            spill_str = f"{spills} B" if spills > 0 else "None"
+            reg_warn = "⚠️" if regs > 224 else " "
+            spill_warn = "🔥" if spills > 0 else " "
+
+            metadata_str = f"Warps: {warps}, Stages: {stages}"
+            print(f"CUDA:{device:<5} | {regs:>4}{reg_warn} | {spill_str:>10}{spill_warn} | {sram_kb:>9.2f} | {metadata_str}")
+
+    print("="*95 + "\n")
