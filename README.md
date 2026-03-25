@@ -30,4 +30,7 @@ pytest tests/test_math.py -k "test_binary" -s
 
 # rerun last failed test case
 pytest tests/test_math.py -k "test_binary" -s --lf
+
+# manually run matrix multiplication test case
+pytest tests/test_linalg.py -k "test_matmul_manual" --M 1015 --N 803 --K 704 --warps 8 --stages 2 -s
 ```
