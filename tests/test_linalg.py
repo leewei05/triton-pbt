@@ -13,7 +13,7 @@ def matmul_kernel(
     stride_bk, stride_bn,
     stride_cm, stride_cn,
     BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
-    A_TRANS: tl.constexpr = False,
+    A_TRANS: tl.constexpr = False, num_stages: tl.constexpr = 1,
 ):
     pid = tl.program_id(0)
 
@@ -31,7 +31,7 @@ def matmul_kernel(
 
     accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
-    for k in range(0, tl.cdiv(K, BLOCK_K)):
+    for k in range(0, tl.cdiv(K, BLOCK_K), num_stages=num_stages):
         offs_k = k * BLOCK_K + tl.arange(0, BLOCK_K)
         mask_k = offs_k < K
 
@@ -68,10 +68,11 @@ def matmul_kernel(
     N=st.integers(min_value=1, max_value=1024),
     K=st.integers(min_value=1, max_value=1024),
     num_warps=st.sampled_from(NUM_WARPS),
+    num_stages=st.integers(min_value=1, max_value=4),
     is_tran=st.booleans(),
     data=st.data()
 )
-def test_matmul_basic(M, N, K, is_tran, num_warps, data):
+def test_matmul_basic(M, N, K, is_tran, num_stages, num_warps, data):
     device = 'cuda'
     # Use float16 for the inputs to ensure Tensor Core usage
     dtype = torch.float16
@@ -110,7 +111,8 @@ def test_matmul_basic(M, N, K, is_tran, num_warps, data):
         c_triton.stride(0), c_triton.stride(1),
         BLOCK_M=bm, BLOCK_N=bn, BLOCK_K=bk,
         A_TRANS=is_tran,
-        num_warps=num_warps
+        num_warps=num_warps,
+        num_stages=num_stages,
     )
 
     # Matmul results can drift slightly due to floating point accumulation order
