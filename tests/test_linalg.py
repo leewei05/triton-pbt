@@ -121,3 +121,62 @@ def test_matmul_basic(M, N, K, is_tran, num_stages, num_warps, data):
 
     # Matmul results can drift slightly due to floating point accumulation order
     torch.testing.assert_close(c_triton, c_ref, atol=1e-2, rtol=1e-2)
+
+def test_matmul_manual(pytestconfig):
+    '''
+    Manual testing
+    '''
+    # Retrieve values from command line
+    M = pytestconfig.getoption("M")
+    N = pytestconfig.getoption("N")
+    K = pytestconfig.getoption("K")
+
+    # If M, N, or K aren't provided, skip this manual test
+    if M is None or N is None or K is None:
+        pytest.skip("Manual parameters (M, N, K) not provided.")
+
+    num_warps = pytestconfig.getoption("warps")
+    num_stages = pytestconfig.getoption("stages")
+    is_tran = pytestconfig.getoption("trans") or False
+
+    # TODO: add these commandline options
+    bm, bn, bk = 128, 128, 64
+    padding = 0
+
+    device = 'cuda'
+    dtype = torch.float16
+
+    if not is_tran:
+        a = torch.randn((M, K + padding), device=device, dtype=dtype)[:, :K]
+        a_ref = a
+    else:
+        # Create (K, M) and transpose it to get an (M, K) view
+        a = torch.randn((K, M + padding), device=device, dtype=dtype)[:, :M].t()
+        a_ref = a # This is already logically (M, K)
+
+    # The same for B: (K + padding) x N, sliced to K x N
+    b_full = torch.randn((K + padding, N), device=device, dtype=dtype)
+    b = b_full[:K, :]
+
+    c_triton = torch.empty((M, N), device=device, dtype=dtype)
+    # Compute reference in FP64 to get the "true" mathematical result
+    c_ref = torch.matmul(a_ref.to(torch.float64), b.to(torch.float64)).to(dtype)
+
+    grid = (triton.cdiv(M, bm) * triton.cdiv(N, bn),)
+    matmul_kernel[grid](
+        a, b, c_triton,
+        M, N, K,
+        a.stride(0), a.stride(1),
+        b.stride(0), b.stride(1),
+        c_triton.stride(0), c_triton.stride(1),
+        BLOCK_M=bm, BLOCK_N=bn, BLOCK_K=bk,
+        A_TRANS=is_tran,
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
+
+    print(f"\nRunning Manual Test: {M} x {N} x {K} | Warps: {num_warps} | Stages: {num_stages}")
+
+    # After the run, print the stats!
+    from common import print_kernel_stats
+    print_kernel_stats(matmul_kernel)
