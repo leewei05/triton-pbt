@@ -231,6 +231,112 @@ def test_binary(n, block_size, num_warps, op_name, data):
             )
             raise e
 
+@triton.jit
+def binary_broadcast_kernel(
+    x_ptr, y_ptr, z_ptr,
+    M, N,
+    stride_xm, stride_xn,
+    stride_ym, stride_yn,
+    stride_zm, stride_zn,
+    BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr
+):
+    pid = tl.program_id(0)
+    num_pid_n = tl.cdiv(N, BLOCK_N)
+    pid_m = pid // num_pid_n
+    pid_n = pid % num_pid_n
+
+    rm = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    rn = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+
+    # Masking for both dimensions
+    mask = (rm[:, None] < M) & (rn[None, :] < N)
+
+    # Pointer math using strides
+    # If a dimension is broadcasted, its stride will be 0
+    x_ptrs = x_ptr + rm[:, None] * stride_xm + rn[None, :] * stride_xn
+    y_ptrs = y_ptr + rm[:, None] * stride_ym + rn[None, :] * stride_yn
+
+    x = tl.load(x_ptrs, mask=mask, other=0.0)
+    y = tl.load(y_ptrs, mask=mask, other=0.0)
+
+    z = BINARY_EXPR
+
+    z_ptrs = z_ptr + rm[:, None] * stride_zm + rn[None, :] * stride_zn
+    tl.store(z_ptrs, z, mask=mask)
+
+@pytest.mark.parametrize("op_name", list(BINARY_OP_CONFIGS.keys()))
+@settings(max_examples=100, deadline=None)
+@given(
+    n=st.integers(min_value=1, max_value=4096),
+    M=st.integers(min_value=1, max_value=512),
+    N=st.integers(min_value=1, max_value=512),
+    # Randomly choose if x or y is broadcasted in M or N
+    mode_m=st.sampled_from(["equal", "x_one", "y_one"]),
+    mode_n=st.sampled_from(["equal", "x_one", "y_one"]),
+    block_m=st.sampled_from([16, 32]),
+    block_n=st.sampled_from([16, 32]),
+    num_warps=st.sampled_from([4, 8]),
+    data=st.data()
+)
+def test_binary_broadcast(n, M, N, mode_m, mode_n, block_m, block_n, num_warps, op_name, data):
+    ref_func, triton_expr, allowed_dtypes = BINARY_OP_CONFIGS[op_name]
+    device = 'cuda'
+    dtype_x = data.draw(st.sampled_from(allowed_dtypes))
+    dtype_y = data.draw(st.sampled_from(allowed_dtypes))
+
+    # 1. Determine shapes based on broadcasting mode
+    mx, my = (M, M) if mode_m == "equal" else (1, M) if mode_m == "x_one" else (M, 1)
+    nx, ny = (N, N) if mode_n == "equal" else (1, N) if mode_n == "x_one" else (N, 1)
+
+    def gen_data(shape, dtype):
+        if dtype in float_dtypes_with_bfloat16:
+            return torch.randn(shape, device=device, dtype=dtype)
+        elif dtype == torch.uint8:
+            return torch.randint(0, 255, shape, device=device, dtype=dtype)
+        else:
+            return torch.randint(-100, 100, shape, device=device, dtype=dtype)
+
+    x_torch = gen_data((mx, nx), dtype_x)
+    y_torch = gen_data((my, ny), dtype_y)
+
+    if op_name in ["/", "%"]:
+        # We cannot assume based on the whole tensor easily,
+        # so we ensure y doesn't contain zeros.
+        assume(not torch.any(y_torch == 0))
+
+    if op_name == "%" and dtype_y in float_dtypes_with_bfloat16:
+        # Ensure the divisor isn't so small that precision loss is guaranteed
+        # floor(x/y) should not exceed a reasonable precision limit
+        assume(torch.all(torch.abs(x_torch / y_torch) < 1e5))
+
+    z_ref = get_triton_reference(ref_func, x_torch, y_torch, op_name, dtype_x, dtype_y)
+    z_torch = torch.empty_like(z_ref)
+
+    # 2. Extract Strides (This is the "Stride 0" magic)
+    # If mx=1, x.stride(0) will be 0 or M depending on how torch views it
+    # We force the stride to 0 for the broadcasted dimension
+    sx_m = x_torch.stride(0) if mx > 1 else 0
+    sx_n = x_torch.stride(1) if nx > 1 else 0
+    sy_m = y_torch.stride(0) if my > 1 else 0
+    sy_n = y_torch.stride(1) if ny > 1 else 0
+
+    grid = (triton.cdiv(M, block_m) * triton.cdiv(N, block_n),)
+    patched_kernel = patch_kernel(
+        binary_broadcast_kernel,
+        {"BINARY_EXPR": triton_expr}
+    )
+
+    patched_kernel[grid](
+        x_torch, y_torch, z_torch,
+        M, N,
+        sx_m, sx_n, sy_m, sy_n,
+        z_torch.stride(0), z_torch.stride(1),
+        BLOCK_M=block_m, BLOCK_N=block_n,
+        num_warps=num_warps
+    )
+
+    torch.testing.assert_close(z_torch, z_ref)
+
 if __name__ == "__main__":
     print(f"GPU: {torch.cuda.get_device_name(0)}")
     print(f"Triton version: {triton.__version__}")
