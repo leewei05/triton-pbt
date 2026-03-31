@@ -76,13 +76,14 @@ def test_matmul_basic(M, N, K, is_tran, num_stages, num_warps, data):
     # Use float16 for the inputs to ensure Tensor Core usage
     dtype = torch.float16
     # Dynamically draw block sizes that are valid for the chosen M, N, K
-    #bm = data.draw(st.sampled_from([16, 32, 64]))
-    #bn = data.draw(st.sampled_from([16, 32, 64]))
-    #bk = data.draw(st.sampled_from([16, 32]))
+    bm = data.draw(st.sampled_from([16, 32, 64]))
+    bn = data.draw(st.sampled_from([16, 32, 64]))
+    bk = data.draw(st.sampled_from([16, 32]))
 
-    bm = data.draw(st.sampled_from([64, 128]))
-    bn = data.draw(st.sampled_from([64, 128, 256]))
-    bk = data.draw(st.sampled_from([32, 64]))
+    # Running this with other tests may hit OOM issue.
+    #bm = data.draw(st.sampled_from([64, 128]))
+    #bn = data.draw(st.sampled_from([64, 128, 256]))
+    #bk = data.draw(st.sampled_from([32, 64]))
 
     # block is larger than the matrix (for now)
     assume(bm <= M and bn <= N and bk <= K)

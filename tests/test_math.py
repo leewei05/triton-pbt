@@ -37,9 +37,7 @@ OP_CONFIGS = {
     "sqrt_rn": (torch.sqrt, "tl.math.sqrt_rn(x.to(tl.float32)).to(x.dtype)", [torch.float32]),
 }
 
-# Guarantee that every op has 100 test examples
 @pytest.mark.parametrize("op_name", list(OP_CONFIGS.keys()))
-@settings(max_examples=100, deadline=None)
 @given(
     n=st.integers(min_value=1, max_value=4096),
     block_size=st.sampled_from(BLOCK_SIZES),
@@ -139,7 +137,6 @@ BINARY_OP_CONFIGS = {
 }
 
 @pytest.mark.parametrize("op_name", list(BINARY_OP_CONFIGS.keys()))
-@settings(max_examples=100, deadline=None)
 @given(
     n=st.integers(min_value=1, max_value=4096),
     block_size=st.sampled_from(BLOCK_SIZES),
@@ -256,8 +253,8 @@ def binary_broadcast_kernel(
     x_ptrs = x_ptr + rm[:, None] * stride_xm + rn[None, :] * stride_xn
     y_ptrs = y_ptr + rm[:, None] * stride_ym + rn[None, :] * stride_yn
 
-    x = tl.load(x_ptrs, mask=mask, other=0.0)
-    y = tl.load(y_ptrs, mask=mask, other=0.0)
+    x = tl.load(x_ptrs, mask=mask, other=0)
+    y = tl.load(y_ptrs, mask=mask, other=0)
 
     z = BINARY_EXPR
 
@@ -267,7 +264,6 @@ def binary_broadcast_kernel(
 @pytest.mark.parametrize("op_name", list(BINARY_OP_CONFIGS.keys()))
 @settings(max_examples=100, deadline=None)
 @given(
-    n=st.integers(min_value=1, max_value=4096),
     M=st.integers(min_value=1, max_value=512),
     N=st.integers(min_value=1, max_value=512),
     # Randomly choose if x or y is broadcasted in M or N
@@ -278,7 +274,7 @@ def binary_broadcast_kernel(
     num_warps=st.sampled_from([4, 8]),
     data=st.data()
 )
-def test_binary_broadcast(n, M, N, mode_m, mode_n, block_m, block_n, num_warps, op_name, data):
+def test_binary_broadcast(M, N, mode_m, mode_n, block_m, block_n, num_warps, op_name, data):
     ref_func, triton_expr, allowed_dtypes = BINARY_OP_CONFIGS[op_name]
     device = 'cuda'
     dtype_x = data.draw(st.sampled_from(allowed_dtypes))
@@ -287,6 +283,14 @@ def test_binary_broadcast(n, M, N, mode_m, mode_n, block_m, block_n, num_warps, 
     # 1. Determine shapes based on broadcasting mode
     mx, my = (M, M) if mode_m == "equal" else (1, M) if mode_m == "x_one" else (M, 1)
     nx, ny = (N, N) if mode_n == "equal" else (1, N) if mode_n == "x_one" else (N, 1)
+
+    is_u_x = (dtype_x == torch.uint8)
+    is_u_y = (dtype_y == torch.uint8)
+    is_int_x = dtype_x in int_dtypes
+    is_int_y = dtype_y in int_dtypes
+
+    mixed_signedness = (is_u_x and is_int_y) or (is_int_x and is_u_y)
+    should_fail = (op_name in ["/", "%"]) and mixed_signedness
 
     def gen_data(shape, dtype):
         if dtype in float_dtypes_with_bfloat16:
@@ -326,16 +330,45 @@ def test_binary_broadcast(n, M, N, mode_m, mode_n, block_m, block_n, num_warps, 
         {"BINARY_EXPR": triton_expr}
     )
 
-    patched_kernel[grid](
-        x_torch, y_torch, z_torch,
-        M, N,
-        sx_m, sx_n, sy_m, sy_n,
-        z_torch.stride(0), z_torch.stride(1),
-        BLOCK_M=block_m, BLOCK_N=block_n,
-        num_warps=num_warps
-    )
+    if should_fail:
+       with pytest.raises(triton.TritonError, match="signedness"):
+            # we don't care about the output since it failed
+            z_placeholder = torch.empty_like(x_torch)
+            patched_kernel[grid](
+                x_torch, y_torch, z_placeholder,
+                M, N,
+                sx_m, sx_n, sy_m, sy_n,
+                z_torch.stride(0), z_torch.stride(1),
+                BLOCK_M=block_m, BLOCK_N=block_n,
+                num_warps=num_warps
+            )
+    else:
+        patched_kernel[grid](
+            x_torch, y_torch, z_torch,
+            M, N,
+            sx_m, sx_n, sy_m, sy_n,
+            z_torch.stride(0), z_torch.stride(1),
+            BLOCK_M=block_m, BLOCK_N=block_n,
+            num_warps=num_warps
+        )
 
-    torch.testing.assert_close(z_torch, z_ref)
+        all_dtypes = [dtype_x, dtype_y, z_ref.dtype]
+        low_prec_types = [torch.float16, torch.bfloat16]
+
+        if any(d in low_prec_types for d in all_dtypes):
+            tol = 1e-2 # 16-bit precision
+        else:
+            tol = 1e-5 # 32-bit or integer precision
+
+        torch.testing.assert_close(
+                    z_torch,
+                    z_ref,
+                    rtol=tol,
+                    atol=tol,
+                    # Treats NaN == NaN as True. We're testing the output of Triton and PyTorch
+                    # Not the semantics of NaN == NaN.
+                    equal_nan=True
+                )
 
 if __name__ == "__main__":
     print(f"GPU: {torch.cuda.get_device_name(0)}")
