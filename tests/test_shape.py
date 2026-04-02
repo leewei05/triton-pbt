@@ -7,7 +7,7 @@ from common import print_kernel_stats
 
 @triton.jit
 def shape_op_kernel(
-    in_ptr, out_ptr, 
+    in_ptr, out_ptr,
     M: tl.constexpr, N: tl.constexpr,
     BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr
 ):
@@ -15,7 +15,7 @@ def shape_op_kernel(
     # In a real kernel, you'd use program_id to tile a larger matrix
     rm = tl.arange(0, BLOCK_M)
     rn = tl.arange(0, BLOCK_N)
-    
+
     # Physical address: in_ptr + row * N + col
     in_ptrs = in_ptr + (rm[:, None] * N + rn[None, :])
     x = tl.load(in_ptrs) # x is shape (BLOCK_M, BLOCK_N)
@@ -26,7 +26,7 @@ def shape_op_kernel(
     # store a (BLOCK_N x BLOCK_M) matrix back to a 1D array.
     out_offsets = rn[:, None] * M + rm[None, :]
     out_ptrs = out_ptr + out_offsets
-    
+
     tl.store(out_ptrs, x_t)
 
 @given(
@@ -40,16 +40,16 @@ def test_triton_transpose(M, N, num_warps):
     # Input is a flat array that represents an M x N matrix
     x = torch.randn(M * N, device=device, dtype=torch.float32)
     z_triton = torch.empty_like(x)
-    
+
     # Reference: Reshape to 2D, transpose, then flatten back
     x_2d = x.view(M, N)
     z_ref = x_2d.t().contiguous().view(-1)
 
     # We launch exactly one program to handle this M x N block
     grid = (1,)
-    
+
     shape_op_kernel[grid](
-        x, z_triton, 
+        x, z_triton,
         M=M, N=N,
         BLOCK_M=M, BLOCK_N=N,
         num_warps=num_warps
