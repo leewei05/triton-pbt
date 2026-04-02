@@ -118,7 +118,7 @@ def test_matmul_basic(M, N, K, is_tran, num_stages, num_warps, data):
         num_warps=num_warps,
         num_stages=num_stages,
     )
-    print_kernel_stats(matmul_kernel)
+    # print_kernel_stats(matmul_kernel)
 
     # Matmul results can drift slightly due to floating point accumulation order
     torch.testing.assert_close(c_triton, c_ref, atol=1e-2, rtol=1e-2)
@@ -180,4 +180,4 @@ def test_matmul_manual(pytestconfig):
 
     # After the run, print the stats!
     from common import print_kernel_stats
-    print_kernel_stats(matmul_kernel)
+    # print_kernel_stats(matmul_kernel)
