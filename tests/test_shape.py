@@ -3,7 +3,7 @@ import triton
 import triton.language as tl
 from hypothesis import given, assume, strategies as st, settings
 import pytest
-from common import * 
+from common import *
 
 @triton.jit
 def general_shape_kernel(
@@ -13,23 +13,23 @@ def general_shape_kernel(
 ):
     # 1. Create a 1D grid of indices [0, 1, 2, ..., 63]
     idx = tl.arange(0, TOTAL_ELEMENTS)
-    
+
     # 2. Map those indices to N-D coordinates
     idx_nd = tl.reshape(idx, SHAPE)
-    
+
     # 3. Permute the INDICES (The "Logic Shuffle")
     # This creates a map of "where the data SHOULD come from"
     idx_permuted = PERMUTE_OP # Injected: tl.permute(idx_nd, (0, 2, 1))
-    
+
     # 4. Flatten the shuffled indices
-    # If idx_permuted[1] is 16, then we will load the 16th element 
+    # If idx_permuted[1] is 16, then we will load the 16th element
     # and put it in the 1st register.
     idx_flat = tl.reshape(idx_permuted, (TOTAL_ELEMENTS,))
-    
+
     # 5. Load using the shuffled indices
     # This is a "Gather" operation
     x = tl.load(in_ptr + idx_flat)
-    
+
     # 6. Store linearly
     # This writes the shuffled data into a contiguous 1D array
     tl.store(out_ptr + idx, x)
