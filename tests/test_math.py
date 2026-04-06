@@ -262,7 +262,6 @@ def binary_broadcast_kernel(
     tl.store(z_ptrs, z, mask=mask)
 
 @pytest.mark.parametrize("op_name", list(BINARY_OP_CONFIGS.keys()))
-@settings(max_examples=100, deadline=None)
 @given(
     M=st.integers(min_value=1, max_value=512),
     N=st.integers(min_value=1, max_value=512),
