@@ -4,6 +4,9 @@ import triton
 import triton.language as tl
 from triton.compiler.errors import CompilationError
 
+#####################
+# Shape Constraints #
+#####################
 @triton.jit
 def arange_kernel(START: tl.constexpr, END: tl.constexpr):
     x = tl.arange(START, END)
@@ -41,3 +44,29 @@ def test_arange_oversized(size):
 
     with pytest.raises(CompilationError, match="exceeds triton maximum tens"):
         arange_kernel[(1,)](START=0, END=oversized_pow2)
+
+@triton.jit
+def dot_kernel(M: tl.constexpr, N: tl.constexpr, K1: tl.constexpr, K2: tl.constexpr):
+    # mismatch inner size
+    a = tl.zeros((M, K1), dtype=tl.float32)
+    b = tl.zeros((K2, N), dtype=tl.float32)
+    c = tl.dot(a, b)
+
+@given(
+    m=st.sampled_from([16, 32, 64]),
+    n=st.sampled_from([16, 32, 64]),
+    k1=st.integers(min_value=16, max_value=64),
+    k2=st.integers(min_value=16, max_value=64)
+)
+def test_dot_inner_dim_mismatch(m, n, k1, k2):
+    assume(k1 != k2)
+    with pytest.raises(CompilationError, match="mismatch inner size"):
+        dot_kernel[(1,)](M=m, N=n, K1=k1, K2=k2)
+
+@given(
+    #k=st.integers(min_value=1, max_value=15),
+    k=st.sampled_from([2, 4, 8]),
+)
+def test_dot_too_small(k):
+    with pytest.raises(CompilationError, match="K >= 16"):
+        dot_kernel[(1,)](M=1, N=1, K1=k, K2=k)
