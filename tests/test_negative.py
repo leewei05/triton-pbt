@@ -28,3 +28,16 @@ def test_arange_negative_bounds(val):
     # Testing that negative start or end triggers the 'int32' error
     with pytest.raises(CompilationError, match="arange must fit in int32"):
         arange_kernel[(1,)](START=val, END=val + 8)
+
+# end - start must be less than or equal to TRITON_MAX_TENSOR_NUMEL = 1048576
+@given(
+    size=st.integers(min_value=1048577, max_value=2000000)
+)
+def test_arange_oversized(size):
+    # We need to make sure 'size' is a power of 2 to avoid
+    # triggering the 'power of 2' error first.
+    # Find the next power of 2 above the limit.
+    oversized_pow2 = 1 << size.bit_length()
+
+    with pytest.raises(CompilationError, match="exceeds triton maximum tens"):
+        arange_kernel[(1,)](START=0, END=oversized_pow2)
