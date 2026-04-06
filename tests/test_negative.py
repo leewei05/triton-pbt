@@ -64,7 +64,6 @@ def test_dot_inner_dim_mismatch(m, n, k1, k2):
         dot_kernel[(1,)](M=m, N=n, K1=k1, K2=k2)
 
 @given(
-    #k=st.integers(min_value=1, max_value=15),
     k=st.sampled_from([2, 4, 8]),
 )
 def test_dot_too_small(k):
