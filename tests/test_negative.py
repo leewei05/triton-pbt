@@ -69,3 +69,23 @@ def test_dot_inner_dim_mismatch(m, n, k1, k2):
 def test_dot_too_small(k):
     with pytest.raises(CompilationError, match="K >= 16"):
         dot_kernel[(1,)](M=1, N=1, K1=k, K2=k)
+
+@triton.jit
+def reshape_kernel(BLOCK_SIZE: tl.constexpr, TARGET_SHAPE: tl.constexpr):
+    x = tl.arange(0, BLOCK_SIZE)
+    y = tl.reshape(x, TARGET_SHAPE)
+
+@given(
+    block_size=st.sampled_from([16, 32, 64, 128]),
+    target_shape=st.lists(st.sampled_from([2, 4, 8, 16]), min_size=2, max_size=4).map(tuple)
+)
+def test_reshape_mismatch(block_size, target_shape):
+    target_total = 1
+    for dim in target_shape:
+        target_total *= dim
+
+    # mismatch
+    assume(target_total != block_size)
+
+    with pytest.raises(CompilationError, match="number of elements"):
+        reshape_kernel[(1,)](BLOCK_SIZE=block_size, TARGET_SHAPE=target_shape)
