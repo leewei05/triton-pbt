@@ -1,18 +1,30 @@
+from hypothesis import given, strategies as st, assume
 import pytest
 import triton
 import triton.language as tl
 from triton.compiler.errors import CompilationError
 
-def test_arange_invalid_range():
-    @triton.jit
-    def arange_kernel(START: tl.constexpr, END: tl.constexpr):
-        x = tl.arange(START, END)
+@triton.jit
+def arange_kernel(START: tl.constexpr, END: tl.constexpr):
+    x = tl.arange(START, END)
 
-    with pytest.raises(CompilationError, match="arange's range must be a power of 2"):
-        arange_kernel[(1,)](START=0, END=7)
+@given(
+    start=st.integers(min_value=0, max_value=1024),
+    end=st.integers(min_value=0, max_value=1024),
+)
+def test_arange_non_power_of_two(start, end):
+    diff = end - start
 
-    with pytest.raises(CompilationError, match="arange's range must be a power of 2"):
-        arange_kernel[(1,)](START=0, END=10)
+    assume(diff > 0)
+    assume((diff & (diff - 1)) != 0)
 
-    with pytest.raises(CompilationError, match="end argument must be greater"):
-        arange_kernel[(1,)](START=10, END=2)
+    with pytest.raises(CompilationError, match="power of 2"):
+        arange_kernel[(1,)](START=start, END=end)
+
+@given(
+    val=st.integers(min_value=-1024, max_value=-1)
+)
+def test_arange_negative_bounds(val):
+    # Testing that negative start or end triggers the 'int32' error
+    with pytest.raises(CompilationError, match="arange must fit in int32"):
+        arange_kernel[(1,)](START=val, END=val + 8)
