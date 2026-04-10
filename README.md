@@ -13,6 +13,7 @@ Activate the environment:
 ```sh
 # 1. Create the environment (only run this the first time)
 # It's gonna take a while to install required packages.
+# Do not run this after SSH into a GPU node. You will get OOM killed when installing packages.
 source ./scripts/init.sh
 
 # 2. Allocate a GPU node
@@ -30,12 +31,12 @@ source ./scripts/setup.sh
 
 Run all tests with `dev` profile (less examples, faster).
 ```sh
-pytest - v tests/ --hypothesis-profile dev
+pytest -v tests/ --hypothesis-profile dev
 ```
 
 To run a thorough coverage, use `stress` profile.
 ```sh
-pytest - v tests/ --hypothesis-profile stress
+pytest -v tests/ --hypothesis-profile stress
 ```
 
 Run a single test manually to observe register pressure.

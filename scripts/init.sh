@@ -16,6 +16,6 @@ source ./scripts/setup.sh
 # This bypasses the slow metadata solving that killed Conda
 export UV_CONCURRENT_DOWNLOADS=2
 export UV_CONCURRENT_INSTALLS=2
-uv pip install torch triton hypothesis pytest
+uv pip install torch triton hypothesis pytest numpy
 
 echo "🚀 Project initialized successfully with venv."
