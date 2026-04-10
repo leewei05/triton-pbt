@@ -7,13 +7,12 @@ rm -rf "$HOME/triton_env"
 
 # 2. Load Python and create the venv
 module load python/3.10.3
-python3 -m venv "$HOME/triton_env"
+python -m venv "$HOME/triton_env" --without-pip
 
 # 3. Use setup.sh to activate
 source ./scripts/setup.sh
 
 # 4. Install uv for hyperspeed installs
-pip install --upgrade pip
 pip install uv
 
 # 5. Install heavy hitters using uv

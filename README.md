@@ -2,13 +2,28 @@
 
 This project uses **Hypothesis** to automatically discover edge cases in Triton kernels by randomly generating shapes, data types, and hardware configurations.
 
+## Prerequisite
+
+- Nvidia GPU (Ampere or newer recommended for `tl.dot` tests)
+- Slurm Workload Manager (e.g., University of Utah CHPC)
+
 ## Quickstart
 
-Allocate a GPU node and activate the environment:
+Activate the environment:
 ```sh
+# 1. Allocate a GPU node
 sbatch ./scripts/tunnel.slr
-# run this the first time
+
+# 2. Check which node was allocated
+squeue -u $USER
+
+# 3. SSH into the allocated node (e.g., notch329)
+ssh <node_name>
+
+# 4. Create the environment (only run this the first time)
 source ./scripts/init.sh
+
+# 5. Load the environment
 source ./scripts/setup.sh
 ```
 
