@@ -12,10 +12,7 @@ python -m venv "$HOME/triton_env" --without-pip
 # 3. Use setup.sh to activate
 source ./scripts/setup.sh
 
-# 4. Install uv for hyperspeed installs
-pip install uv
-
-# 5. Install heavy hitters using uv
+# 4. Install heavy hitters using uv
 # This bypasses the slow metadata solving that killed Conda
 uv pip install torch triton hypothesis pytest
 

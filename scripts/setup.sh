@@ -4,6 +4,7 @@
 # 1. Load system-optimized Python and CUDA
 module load python/3.10.3
 module load cuda/12.6.3
+module load uv
 
 # 2. Activate the venv
 # Assuming the venv is created in your home directory
