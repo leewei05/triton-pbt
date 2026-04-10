@@ -1,15 +1,23 @@
 #!/bin/bash
+# init.sh: Create the environment from scratch
 
-module load miniforge3
-
+# 1. Clean up old remnants (Conda or venv)
 rm -rf ~/.conda/envs/triton_env
+rm -rf "$HOME/triton_env"
 
-conda config --set solver libmamba
-conda config --set channel_priority strict
-conda create -n triton_env python=3.10 -y
+# 2. Load Python and create the venv
+module load python/3.10.3
+python3 -m venv "$HOME/triton_env"
 
-# Use the setup script to activate and load CUDA
+# 3. Use setup.sh to activate
 source ./scripts/setup.sh
 
-# Install heavy hitters
-pip install torch triton hypothesis pytest
+# 4. Install uv for hyperspeed installs
+pip install --upgrade pip
+pip install uv
+
+# 5. Install heavy hitters using uv
+# This bypasses the slow metadata solving that killed Conda
+uv pip install torch triton hypothesis pytest
+
+echo "🚀 Project initialized successfully with venv."
