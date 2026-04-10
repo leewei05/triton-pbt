@@ -1,8 +1,6 @@
 #!/bin/bash
 # init.sh: Create the environment from scratch
 
-set -x
-
 # 1. Clean up old remnants (Conda or venv)
 rm -rf ~/.conda/envs/triton_env
 rm -rf "$HOME/triton_env"

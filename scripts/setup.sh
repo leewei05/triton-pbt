@@ -1,8 +1,6 @@
 #!/bin/bash
 # setup.sh: Load modules and activate the virtual environment
 
-set -x
-
 # 1. Load system-optimized Python and CUDA
 module load python/3.10.3
 module load cuda/12.6.3
