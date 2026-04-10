@@ -1,6 +1,8 @@
 #!/bin/bash
 # init.sh: Create the environment from scratch
 
+set -x
+
 # 1. Clean up old remnants (Conda or venv)
 rm -rf ~/.conda/envs/triton_env
 rm -rf "$HOME/triton_env"
@@ -16,6 +18,6 @@ source ./scripts/setup.sh
 # This bypasses the slow metadata solving that killed Conda
 export UV_CONCURRENT_DOWNLOADS=1
 export UV_CONCURRENT_INSTALLS=1
-uv pip install triton hypothesis
+uv pip install torch triton hypothesis pytest
 
 echo "🚀 Project initialized successfully with venv."
