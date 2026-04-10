@@ -14,8 +14,8 @@ source ./scripts/setup.sh
 
 # 4. Install heavy hitters using uv
 # This bypasses the slow metadata solving that killed Conda
-export UV_CONCURRENT_DOWNLOADS=1
-export UV_CONCURRENT_INSTALLS=1
+export UV_CONCURRENT_DOWNLOADS=2
+export UV_CONCURRENT_INSTALLS=2
 uv pip install torch triton hypothesis pytest
 
 echo "🚀 Project initialized successfully with venv."

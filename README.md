@@ -11,19 +11,20 @@ This project uses **Hypothesis** to automatically discover edge cases in Triton 
 
 Activate the environment:
 ```sh
-# 1. Allocate a GPU node
-sbatch ./scripts/tunnel.slr
-
-# 2. Check which node was allocated
-squeue -u $USER
-
-# 3. SSH into the allocated node (e.g., notch329)
-ssh <node_name>
-
-# 4. Create the environment (only run this the first time)
+# 1. Create the environment (only run this the first time)
+# It's gonna take a while to install required packages.
 source ./scripts/init.sh
 
-# 5. Load the environment
+# 2. Allocate a GPU node
+sbatch ./scripts/tunnel.slr
+
+# 3. Check which node was allocated
+squeue -u $USER
+
+# 4. SSH into the allocated node (e.g., notch329)
+ssh <node_name>
+
+# 5. Activate the environment in the allocated node.
 source ./scripts/setup.sh
 ```
 
