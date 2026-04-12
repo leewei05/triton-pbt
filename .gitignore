@@ -1,6 +1,7 @@
 # Python artifacts
 __pycache__/
 *.py[cod]
+.triton_env
 
 # Triton cache (Crucial!)
 .triton/
