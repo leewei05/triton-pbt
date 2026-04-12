@@ -4,10 +4,18 @@ This project uses **Hypothesis** to automatically discover edge cases in Triton 
 
 ## Prerequisite
 
-- Nvidia GPU (Ampere or newer recommended for `tl.dot` tests)
+- Nvidia GPU (Ampere or newer architecture)
 - Slurm Workload Manager (e.g., University of Utah CHPC)
 
 ## Quickstart
+
+If you have a Nvidia GPU locally, you can skip the following process and install the required Python packages listed in `./scripts/init.sh`.
+
+```sh
+pip install torch triton hypothesis pytest numpy
+```
+
+First, login to a dedicated CHPC environment.
 
 Activate the environment:
 ```sh
