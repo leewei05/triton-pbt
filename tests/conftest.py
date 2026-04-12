@@ -2,7 +2,7 @@ from hypothesis import settings
 import pytest
 
 # A profile for quick demo
-settings.register_profile("dev", max_examples=1, deadline=None)
+settings.register_profile("demo", max_examples=1, deadline=None)
 
 # A profile for quick local dev
 settings.register_profile("dev", max_examples=5, deadline=None)
